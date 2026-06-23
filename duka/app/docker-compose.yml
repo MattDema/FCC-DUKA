@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  storage-daemon-1:
+    build: ./storage-daemon
+    environment:
+      - DAEMON_ID=daemon-1
+    volumes:
+      - daemon1-data:/data/shards
+
+  storage-daemon-2:
+    build: ./storage-daemon
+    environment:
+      - DAEMON_ID=daemon-2
+    volumes:
+      - daemon2-data:/data/shards
+
+  storage-daemon-3:
+    build: ./storage-daemon
+    environment:
+      - DAEMON_ID=daemon-3
+    volumes:
+      - daemon3-data:/data/shards
+
+  gateway:
+    build: ./gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_HOST=redis
+      - DAEMON_URLS=http://storage-daemon-1:8000,http://storage-daemon-2:8000,http://storage-daemon-3:8000
+    depends_on:
+      - redis
+      - storage-daemon-1
+      - storage-daemon-2
+      - storage-daemon-3
+
+volumes:
+  daemon1-data:
+  daemon2-data:
+  daemon3-data:
