@@ -1,0 +1,25 @@
+# ============================================================
+# redis-service.yaml — Internal service for Redis
+# ============================================================
+# Headless service so the Gateway can reach Redis at:
+#   redis.duka.svc.cluster.local
+#
+# Only the Gateway needs to talk to Redis (metadata reads
+# and writes). Network Policies will enforce this.
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: duka
+  labels:
+    app: redis
+spec:
+  clusterIP: None  # headless, matches StatefulSet serviceName
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+      protocol: TCP

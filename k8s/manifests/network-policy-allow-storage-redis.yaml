@@ -1,0 +1,96 @@
+# ============================================================
+# network-policy-allow-storage-redis.yaml
+# Ingress rules for Storage Daemons and Redis
+# ============================================================
+# These policies define who CAN reach Storage Daemons and Redis.
+#
+# Storage Daemons:
+#   INGRESS: Only from Gateway pods (label: app=gateway)
+#   EGRESS:  Only DNS (kube-dns) — daemons never initiate
+#            connections to anything else.
+#
+#   Daemon-to-daemon traffic is BLOCKED by default-deny.
+#   This is critical: if one edge daemon is compromised,
+#   the attacker cannot laterally move to steal shards
+#   from other daemons. Each daemon is an isolated shard
+#   store.
+#
+# Redis:
+#   INGRESS: Only from Gateway pods (label: app=gateway)
+#   EGRESS:  Only DNS (for cluster-internal resolution)
+#
+#   No Storage Daemon can reach Redis directly. Only the
+#   Gateway reads/writes metadata.
+# ============================================================
+
+# --- Storage Daemon ingress + egress ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-storage-daemon
+  namespace: duka
+spec:
+  podSelector:
+    matchLabels:
+      app: storage-daemon
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only Gateway can reach Storage Daemons
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - port: 8000
+          protocol: TCP
+  egress:
+    # Storage Daemons only need DNS (no outbound connections)
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+
+---
+
+# --- Redis ingress + egress ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-redis
+  namespace: duka
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only Gateway can reach Redis
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - port: 6379
+          protocol: TCP
+  egress:
+    # Redis only needs DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

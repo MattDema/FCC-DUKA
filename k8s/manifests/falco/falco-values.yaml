@@ -1,0 +1,128 @@
+# ============================================================
+# falco-values.yaml — Helm values for Falco deployment
+# ============================================================
+# Falco is a runtime threat detection engine. It uses eBPF
+# (or kernel module) to monitor syscalls and container events
+# in real-time, firing alerts when suspicious behavior occurs.
+#
+# Why Falco?
+# ──────────
+# Network Policies PREVENT unwanted traffic. gVisor SANDBOXES
+# container syscalls. But we also need to DETECT and ALERT on
+# suspicious activity — this is defense-in-depth:
+#   Layer 1: Prevention (Network Policies, Pod Security Context)
+#   Layer 2: Sandboxing (gVisor)
+#   Layer 3: Detection (Falco)
+#
+# Falco runs as a DaemonSet — one instance per node — so it
+# monitors ALL containers on each worker node.
+# ============================================================
+
+# Use eBPF driver instead of kernel module (more portable,
+# no need to compile kernel headers on each node)
+driver:
+  kind: modern_ebpf
+
+# Enable JSON output for structured logging (easier to parse
+# in demos and can be piped to a SIEM in production)
+falco:
+  json_output: true
+  json_include_output_property: true
+
+  # Load default rules + our custom rules
+  rules_file:
+    - /etc/falco/falco_rules.yaml
+    - /etc/falco/rules.d
+
+# Mount our custom rules as a ConfigMap
+customRules:
+  duka-rules.yaml: |-
+    # ==========================================================
+    # DUKA Custom Falco Rules
+    # ==========================================================
+    # These rules are tailored to our threat model:
+    # - Storage daemons should NEVER make outbound connections
+    # - No one should spawn a shell inside any container
+    # - Sensitive file reads should be flagged
+    # ==========================================================
+
+    # Rule 1: Detect outbound network connections from storage daemons
+    # ────────────────────────────────────────────────────────────────
+    # Storage daemons are passive shard stores. They should only
+    # RECEIVE connections from the Gateway, never initiate outbound.
+    # If a daemon makes an outbound connection, it's likely:
+    #   - Data exfiltration (compromised daemon sending shards out)
+    #   - Reverse shell (attacker establishing C2 channel)
+    #   - Cryptominer phoning home
+    - rule: DUKA - Unexpected Outbound Connection from Storage Daemon
+      desc: >
+        Detects any outbound network connection initiated by a
+        storage-daemon container. Daemons should only receive
+        inbound connections from the Gateway.
+      condition: >
+        evt.type in (connect, sendto, sendmsg)
+        and container
+        and container.name = "storage-daemon"
+        and fd.typechar = 4
+        and fd.ip != "0.0.0.0"
+        and not fd.sip in (rfc_1918_addresses)
+      output: >
+        ALERT: Storage daemon made unexpected outbound connection
+        (user=%user.name command=%proc.cmdline connection=%fd.name
+        container=%container.name image=%container.image.repository
+        pod=%k8s.pod.name namespace=%k8s.ns.name)
+      priority: WARNING
+      tags: [network, duka, storage-daemon]
+
+    # Rule 2: Detect shell spawned in any DUKA container
+    # ──────────────────────────────────────────────────────
+    # In production, no one should exec into containers.
+    # All management should be through K8s APIs and CI/CD.
+    - rule: DUKA - Shell Spawned in Container
+      desc: >
+        Detects when a shell (bash, sh, etc.) is spawned inside
+        any container in the duka namespace. This could indicate
+        an attacker gaining interactive access.
+      condition: >
+        spawned_process
+        and container
+        and k8s.ns.name = "duka"
+        and proc.name in (bash, sh, dash, zsh, csh, ksh)
+      output: >
+        ALERT: Shell spawned in DUKA container
+        (user=%user.name shell=%proc.name parent=%proc.pname
+        command=%proc.cmdline container=%container.name
+        pod=%k8s.pod.name namespace=%k8s.ns.name)
+      priority: WARNING
+      tags: [process, duka, shell]
+
+    # Rule 3: Detect sensitive file access
+    # ─────────────────────────────────────
+    # Containers should never read /etc/shadow, /etc/passwd, etc.
+    - rule: DUKA - Sensitive File Read in Container
+      desc: >
+        Detects when a container reads sensitive host files.
+        This could indicate privilege escalation attempts.
+      condition: >
+        open_read
+        and container
+        and k8s.ns.name = "duka"
+        and fd.name in (/etc/shadow, /etc/sudoers, /proc/1/environ)
+      output: >
+        ALERT: Sensitive file read in DUKA container
+        (user=%user.name command=%proc.cmdline file=%fd.name
+        container=%container.name pod=%k8s.pod.name)
+      priority: CRITICAL
+      tags: [filesystem, duka, sensitive]
+
+# Falco runs as DaemonSet by default (one per node)
+# No additional config needed for that.
+
+# Resource limits for Falco pods
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

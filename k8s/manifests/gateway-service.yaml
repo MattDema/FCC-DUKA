@@ -1,0 +1,36 @@
+# ============================================================
+# gateway-service.yaml — Expose the Gateway externally
+# ============================================================
+# Service type: NodePort
+#
+# Why NodePort instead of LoadBalancer or Ingress?
+# - We're running on bare-metal KVM VMs inside OpenNebula,
+#   not a cloud provider with a native LB integration.
+# - LoadBalancer type would stay <pending> forever without
+#   MetalLB or similar, which is overkill for 4 VMs.
+# - Ingress requires an Ingress Controller (nginx, traefik)
+#   which adds operational complexity for a demo.
+# - NodePort exposes the Gateway on a high port (30080) on
+#   every node. Since the Azure VM forwards port 8080→VM,
+#   we can also port-forward or use the node IP directly.
+#
+# In production: you'd use Ingress + cert-manager + TLS.
+# For fog/edge: NodePort is the pragmatic choice.
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: duka
+  labels:
+    app: gateway
+spec:
+  type: NodePort
+  selector:
+    app: gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30080
+      protocol: TCP

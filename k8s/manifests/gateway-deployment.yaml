@@ -1,0 +1,89 @@
+# ============================================================
+# gateway-deployment.yaml — Gateway API server
+# ============================================================
+# The Gateway is the single entry point for file uploads and
+# downloads. It handles:
+#   1. AES-256-GCM encryption/decryption
+#   2. Splitting encrypted data into N shards
+#   3. Distributing shards across Storage Daemons
+#   4. Storing metadata (keys, shard map) in Redis
+#
+# Security design choices:
+# - runAsNonRoot + runAsUser 1000: prevents privilege escalation
+# - drop ALL capabilities: no Linux capabilities = minimal attack
+#   surface (no ptrace, no net_raw, no sys_admin, etc.)
+# - readOnlyRootFilesystem: attacker cannot write persistent
+#   backdoors even if app is compromised
+# - allowPrivilegeEscalation: false: prevents setuid binaries
+# - Resource requests/limits: required for HPA (Day 4)
+#
+# Replica count starts at 1; HPA will scale 1→4 under load.
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: duka
+  labels:
+    app: gateway
+    component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+        component: api
+    spec:
+      # --- Security Context (Pod level) ---
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: gateway
+          # TODO: Replace with actual image after Person B pushes to ghcr.io
+          image: ghcr.io/REPLACE_ORG/duka-gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          env:
+            - name: REDIS_HOST
+              value: "redis.duka.svc.cluster.local"
+            - name: DAEMON_URLS
+              value: "http://storage-daemon-0.storage-daemon.duka.svc.cluster.local:8000,http://storage-daemon-1.storage-daemon.duka.svc.cluster.local:8000,http://storage-daemon-2.storage-daemon.duka.svc.cluster.local:8000"
+          # --- Security Context (Container level) ---
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          # --- Resources (needed for HPA on Day 4) ---
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          # --- Health checks ---
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
