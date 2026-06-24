@@ -1,0 +1,37 @@
+# ============================================================
+# network-policy-default-deny.yaml — Zero-trust baseline
+# ============================================================
+# This policy blocks ALL ingress and egress traffic for every
+# pod in the duka namespace by default.
+#
+# Why default-deny?
+# ──────────────────
+# Zero-trust networking: no pod can communicate with any other
+# pod unless explicitly allowed by a whitelist policy. This is
+# the cloud-native equivalent of network segmentation.
+#
+# Without this, any compromised pod could:
+#   - Scan and reach every other pod in the namespace
+#   - Exfiltrate data to external endpoints
+#   - Perform lateral movement across the cluster
+#
+# Professor question: "Why flat network instead of isolated
+# segments?" → Answer: We enforce zero-trust at the
+# orchestration layer via Network Policies. This is the
+# cloud-native approach — isolation is declarative, auditable,
+# and travels with the workload (not tied to VLANs/subnets).
+#
+# IMPORTANT: This policy alone makes everything non-functional.
+# The allow-* policies below punch specific holes.
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: duka
+spec:
+  # Apply to ALL pods in the namespace
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

@@ -1,0 +1,148 @@
+# ============================================================
+# storage-daemon-statefulset.yaml — Sharded storage daemons
+# ============================================================
+# Why StatefulSet instead of Deployment?
+# ─────────────────────────────────────
+# The Gateway stores per-file metadata in Redis that includes
+# the exact daemon URLs that hold each shard:
+#   {"shard_ids": ["<id>-shard-0", ...], "daemon_urls": [...]}
+#
+# If we used a Deployment, pod restarts would assign new names
+# and IPs. The shard-to-daemon mapping stored in Redis would
+# break, and downloads would fail with 404s.
+#
+# StatefulSet guarantees:
+#   - Stable network identities: storage-daemon-{0,1,2}
+#   - Stable DNS via headless service:
+#     storage-daemon-0.storage-daemon.duka.svc.cluster.local
+#   - Ordered, graceful deployment and scaling
+#   - Persistent storage survives pod restarts
+#
+# Security design:
+# ─────────────────
+# - runtimeClassName: gvisor → runs inside gVisor sandbox
+#   (user-space kernel intercepts all syscalls)
+# - runAsNonRoot + runAsUser 1000: no root in container
+# - drop ALL capabilities: minimal Linux privilege
+# - readOnlyRootFilesystem: immutable container FS, only
+#   /data/shards and /tmp are writable
+#
+# Scheduling:
+# ───────────
+# - podAntiAffinity (required): ensures exactly one daemon
+#   per physical worker node. This is critical for fault
+#   tolerance — if two daemons share a node and it fails,
+#   two shards are lost simultaneously.
+# ============================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: storage-daemon
+  namespace: duka
+  labels:
+    app: storage-daemon
+    component: storage
+spec:
+  serviceName: storage-daemon  # must match headless Service name
+  replicas: 3
+  selector:
+    matchLabels:
+      app: storage-daemon
+  template:
+    metadata:
+      labels:
+        app: storage-daemon
+        component: storage
+    spec:
+      # --- gVisor sandbox ---
+      runtimeClassName: gvisor
+
+      # --- Pod-level security context ---
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+
+      # --- Anti-affinity: one daemon per node ---
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - storage-daemon
+              topologyKey: kubernetes.io/hostname
+
+      containers:
+        - name: storage-daemon
+          # TODO: Replace with actual image after Person B pushes to ghcr.io
+          image: ghcr.io/REPLACE_ORG/duka-storage-daemon:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          env:
+            # Use the pod name as DAEMON_ID for traceability in logs
+            - name: DAEMON_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          # --- Container-level security context ---
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          # --- Resources ---
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          # --- Volume mounts ---
+          volumeMounts:
+            - name: shard-data
+              mountPath: /data/shards
+            - name: tmp
+              mountPath: /tmp
+          # --- Health checks ---
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+      volumes:
+        # Writable /tmp for Python/uvicorn temp files
+        - name: tmp
+          emptyDir: {}
+
+  # --- Persistent volume for shard data ---
+  # VolumeClaimTemplate ensures each pod gets its own PVC.
+  # Data survives pod restarts (critical: shards must persist).
+  volumeClaimTemplates:
+    - metadata:
+        name: shard-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+        # Uses the cluster's default StorageClass.
+        # On bare-metal, ensure local-path-provisioner is installed,
+        # or replace with hostPath volumes if no provisioner exists.

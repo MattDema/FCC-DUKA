@@ -1,0 +1,16 @@
+# ============================================================
+# namespace.yaml — Dedicated namespace for the DUKA project
+# ============================================================
+# Rationale: Namespace isolation is a K8s best practice.
+# - Network Policies are namespace-scoped, so a dedicated namespace
+#   makes deny-all + whitelist policies cleaner.
+# - Resource quotas and RBAC can be scoped per-namespace.
+# - Prevents accidental interference with kube-system or default ns.
+# ============================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: duka
+  labels:
+    project: duka
+    purpose: fog-edge-storage

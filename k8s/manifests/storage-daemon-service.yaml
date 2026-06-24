@@ -1,0 +1,36 @@
+# ============================================================
+# storage-daemon-service.yaml — Headless service for daemons
+# ============================================================
+# Why headless (clusterIP: None)?
+# ─────────────────────────────────
+# A headless service does NOT create a virtual IP. Instead,
+# DNS queries return the individual pod IPs directly. Combined
+# with a StatefulSet, each pod gets a predictable DNS name:
+#
+#   storage-daemon-0.storage-daemon.duka.svc.cluster.local
+#   storage-daemon-1.storage-daemon.duka.svc.cluster.local
+#   storage-daemon-2.storage-daemon.duka.svc.cluster.local
+#
+# The Gateway uses these DNS names in its DAEMON_URLS env var
+# to distribute shards to specific daemons and retrieve them
+# by the same stable address.
+#
+# A regular ClusterIP service would load-balance across all
+# daemons randomly, which breaks the shard→daemon mapping.
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: storage-daemon
+  namespace: duka
+  labels:
+    app: storage-daemon
+spec:
+  clusterIP: None  # headless
+  selector:
+    app: storage-daemon
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP

@@ -1,0 +1,65 @@
+# ============================================================
+# network-policy-allow-gateway.yaml — Gateway traffic rules
+# ============================================================
+# This policy defines what the Gateway pods CAN do:
+#
+# INGRESS:
+#   - Accept connections from anywhere (external users upload
+#     and download files). In production you'd restrict this
+#     to an Ingress Controller's CIDR.
+#
+# EGRESS (Gateway needs to reach 3 things):
+#   1. Storage Daemon pods on port 8000 (shard distribution)
+#   2. Redis pods on port 6379 (metadata read/write)
+#   3. kube-dns on port 53 (DNS resolution for service names)
+#
+# What the Gateway CANNOT do:
+#   - Reach the internet (no arbitrary egress)
+#   - Reach kube-system pods (except DNS)
+#   - Reach any other namespace
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway
+  namespace: duka
+spec:
+  podSelector:
+    matchLabels:
+      app: gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow inbound traffic from any source (external users)
+    - {}
+  egress:
+    # 1. Gateway → Storage Daemons (port 8000)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: storage-daemon
+      ports:
+        - port: 8000
+          protocol: TCP
+
+    # 2. Gateway → Redis (port 6379)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+
+    # 3. Gateway → kube-dns (required for service name resolution)
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

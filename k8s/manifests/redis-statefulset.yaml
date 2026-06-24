@@ -1,0 +1,98 @@
+# ============================================================
+# redis-statefulset.yaml — Metadata store
+# ============================================================
+# Redis stores the mapping between file_id and:
+#   - AES-256 encryption key (hex)
+#   - GCM nonce (hex)
+#   - Ordered list of shard IDs
+#   - Ordered list of daemon URLs holding each shard
+#   - Original filename and size
+#
+# Why StatefulSet + PVC instead of a simple Deployment?
+# ─────────────────────────────────────────────────────
+# If Redis restarts and loses its data, ALL uploaded files
+# become permanently irrecoverable — we lose the encryption
+# keys and the shard map. A PVC ensures data persists across
+# pod restarts and rescheduling.
+#
+# In production you'd use Redis Sentinel or a managed service.
+# For this demo, single-replica Redis with persistent storage
+# is the right trade-off between reliability and complexity.
+#
+# Security note: In production, encryption keys should be in
+# a secrets manager (Vault, AWS KMS), not in Redis. For this
+# project scope, Redis is acceptable.
+# ============================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: duka
+  labels:
+    app: redis
+    component: metadata-store
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        component: metadata-store
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+              protocol: TCP
+          # --- Security context ---
+          # Redis Alpine image runs as root by default.
+          # We override to run as redis user (UID 999) for security.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          # --- Resources ---
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          # --- Volume mount for persistence ---
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+          # --- Health checks ---
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+  # --- Persistent storage for Redis data ---
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
