@@ -55,9 +55,6 @@ spec:
           # We override to run as redis user (UID 999) for security.
           securityContext:
             allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
           # --- Resources ---
           resources:
             requests:
