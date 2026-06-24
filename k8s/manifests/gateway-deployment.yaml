@@ -47,7 +47,7 @@ spec:
       containers:
         - name: gateway
           # TODO: Replace with actual image after Person B pushes to ghcr.io
-          image: ghcr.io/REPLACE_ORG/duka-gateway:latest
+          image: ghcr.io/mattdema/duka-gateway:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

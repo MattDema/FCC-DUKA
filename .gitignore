@@ -1,3 +1,5 @@
 # Private keys - never commit
 *.pem
 *.key
+github-token.txt
+pipeline_progetto_matt.md
