@@ -79,7 +79,7 @@ spec:
       containers:
         - name: storage-daemon
           # TODO: Replace with actual image after Person B pushes to ghcr.io
-          image: ghcr.io/REPLACE_ORG/duka-storage-daemon:latest
+          image: ghcr.io/mattdema/duka-storage-daemon:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
@@ -112,6 +112,8 @@ spec:
               mountPath: /data/shards
             - name: tmp
               mountPath: /tmp
+            - name: home
+              mountPath: /home/app
           # --- Health checks ---
           livenessProbe:
             httpGet:
@@ -129,6 +131,9 @@ spec:
       volumes:
         # Writable /tmp for Python/uvicorn temp files
         - name: tmp
+          emptyDir: {}
+        # Writable home dir for uvicorn startup files
+        - name: home
           emptyDir: {}
 
   # --- Persistent volume for shard data ---

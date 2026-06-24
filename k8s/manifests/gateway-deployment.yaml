@@ -47,7 +47,7 @@ spec:
       containers:
         - name: gateway
           # TODO: Replace with actual image after Person B pushes to ghcr.io
-          image: ghcr.io/REPLACE_ORG/duka-gateway:latest
+          image: ghcr.io/mattdema/duka-gateway:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -81,9 +81,20 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 15
             failureThreshold: 3
+          # --- Volume mounts (writable dirs for uvicorn) ---
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: home
+              mountPath: /home/app
           readinessProbe:
             httpGet:
               path: /health
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: home
+          emptyDir: {}
