@@ -117,11 +117,7 @@ customRules:
 # Falco runs as DaemonSet by default (one per node)
 # No additional config needed for that.
 
-# Resource limits for Falco pods
 resources:
   requests:
     cpu: 100m
     memory: 256Mi
-  limits:
-    cpu: 500m
-    memory: 512Mi
