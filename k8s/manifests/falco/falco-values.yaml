@@ -21,7 +21,7 @@
 # Use eBPF driver instead of kernel module (more portable,
 # no need to compile kernel headers on each node)
 driver:
-  kind: modern_ebpf
+  kind: ebpf
 
 # Enable JSON output for structured logging (easier to parse
 # in demos and can be piped to a SIEM in production)
