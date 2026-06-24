@@ -65,7 +65,6 @@ customRules:
         and container.name = "storage-daemon"
         and fd.typechar = 4
         and fd.ip != "0.0.0.0"
-        and not fd.sip in (rfc_1918_addresses)
       output: >
         ALERT: Storage daemon made unexpected outbound connection
         (user=%user.name command=%proc.cmdline connection=%fd.name
