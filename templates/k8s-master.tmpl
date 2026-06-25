@@ -10,7 +10,8 @@ OS = [
 
 DISK = [
   IMAGE_ID = "0",
-  SIZE = "20480"
+  SIZE = "20480",
+  DEV_PREFIX = "vd"
 ]
 
 NIC = [
@@ -25,6 +26,6 @@ GRAPHICS = [
 CONTEXT = [
   NETWORK = "YES",
   SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]",
-  USER_DATA = "#include
-file:///var/lib/one/context/master-cloud-init.yaml"
+  USER_DATA_ENCODING = "base64",
+  USER_DATA = "$USER_DATA_B64"
 ]
