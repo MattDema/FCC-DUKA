@@ -67,7 +67,7 @@ runcmd:
   # ============================================
   # 6. INIZIALIZZARE IL CLUSTER
   # ============================================
-  - kubeadm init --pod-network-cidr=10.244.0.0/16 --token-ttl=0 | tee /root/kubeadm-init.log
+  - kubeadm init --pod-network-cidr=10.244.0.0/16 --token-ttl=0 --ignore-preflight-errors=all | tee /root/kubeadm-init.log
 
   # Configurare kubectl per root
   - mkdir -p /root/.kube
