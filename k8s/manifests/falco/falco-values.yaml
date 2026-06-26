@@ -30,7 +30,7 @@ falco:
   json_include_output_property: true
 
   # Load default rules + our custom rules
-  rules_file:
+  rules_files:
     - /etc/falco/falco_rules.yaml
     - /etc/falco/rules.d
 
