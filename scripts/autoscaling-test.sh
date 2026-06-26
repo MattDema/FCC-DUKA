@@ -7,7 +7,7 @@ GATEWAY_IP="10.106.233.31:8080"
 
 echo "🚀 Inizio Load Test (30 richieste simultanee da 1MB)..."
 
-for i in $(seq 1 50); do
+for i in $(seq 1 30); do
   # Lancia la curl in background usando la "&" finale per fare concorrenza vera
   curl -s -X POST http://$GATEWAY_IP/upload -F file=@testfile.jpg > /dev/null &
 done
