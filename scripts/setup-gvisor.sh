@@ -3,7 +3,7 @@ WORKER_IP=$1
 WORKER_NAME=$2
 
 echo "=== Installing gVisor on $WORKER_NAME ($WORKER_IP) ==="
-ssh -o StrictHostKeyChecking=no root@$WORKER_IP << 'REMOTE'
+ssh -o StrictHostKeyChecking=no ubuntu@$WORKER_IP 'sudo bash -s' << 'REMOTE'
 
 # 1. Aggiungere repository gVisor
 curl -fsSL https://gvisor.dev/archive.key | gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
