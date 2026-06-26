@@ -1,11 +1,11 @@
 #!/bin/bash
 # 1. Crea un file di test finto da 10MB
-dd if=/dev/urandom of=testfile.jpg bs=1M count=10 2>/dev/null
+dd if=/dev/urandom of=testfile.jpg bs=1M count=1 2>/dev/null
 
 # DA CAMBIARE: Inserisci l'IP e la porta esatta del tuo Gateway (o Ingress)
-GATEWAY_IP="127.0.0.1:8000"
+GATEWAY_IP="10.106.233.31:8080"
 
-echo "🚀 Inizio Load Test (50 richieste simultanee da 10MB)..."
+echo "🚀 Inizio Load Test (30 richieste simultanee da 1MB)..."
 
 for i in $(seq 1 50); do
   # Lancia la curl in background usando la "&" finale per fare concorrenza vera
