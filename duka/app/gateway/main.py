@@ -6,6 +6,8 @@ import json
 from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.responses import Response
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from kubernetes import client, config
+import base64  
 
 app = FastAPI()
 
@@ -44,10 +46,38 @@ def split_into_shards(data: bytes, n: int) -> list[bytes]:
 def reassemble_shards(shards: list[bytes]) -> bytes:
     return b"".join(shards)
 
+try:
+    config.load_incluster_config()
+except config.ConfigException:
+    config.load_kube_config()
+
+k8s_v1 = client.CoreV1Api()
+
+
+def store_key_as_secret(file_id: str, key: bytes, nonce: bytes):
+    secret = client.V1Secret(
+        metadata=client.V1ObjectMeta(name=f"duka-key-{file_id}", namespace="duka"),
+        data={
+            "key": base64.b64encode(key).decode(),
+            "nonce": base64.b64encode(nonce).decode()
+        }
+    )
+    k8s_v1.create_namespaced_secret(namespace="duka", body=secret)
+
+
+def retrieve_key_from_secret(file_id: str) -> tuple[bytes, bytes]:
+    secret = k8s_v1.read_namespaced_secret(name=f"duka-key-{file_id}", namespace="duka")
+    key = base64.b64decode(secret.data["key"])
+    nonce = base64.b64decode(secret.data["nonce"])
+    return key, nonce
+
+
 # --- Routes ---
 @app.get("/health")
 def health():
     return {"status": "ok", "daemons": DAEMON_URLS}
+
+
 
 @app.post("/upload")
 async def upload(file: UploadFile):
@@ -60,34 +90,31 @@ async def upload(file: UploadFile):
     key = generate_key()
     nonce, ciphertext = encrypt(raw_data, key)
 
-    # 2. Split into N shards (one per daemon)
+    # 2. Store key in K8s Secret — NOT in Redis
+    store_key_as_secret(file_id, key, nonce)
+
+    # 3. Split into shards
     n = len(DAEMON_URLS)
     shards = split_into_shards(ciphertext, n)
 
-    # 3. Distribute shards to daemons
+    # 4. Distribute shards
     shard_ids = []
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient() as client_http:
         for i, (shard_data, daemon_url) in enumerate(zip(shards, DAEMON_URLS)):
             shard_id = f"{file_id}-shard-{i}"
-            response = await client.post(
+            response = await client_http.post(
                 f"{daemon_url}/shard/{shard_id}",
                 files={"file": (shard_id, shard_data, "application/octet-stream")}
             )
             if response.status_code != 200:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to store shard {i} on {daemon_url}"
-                )
+                raise HTTPException(status_code=500, detail=f"Failed to store shard {i}")
             shard_ids.append(shard_id)
 
-    # 4. Store metadata in Redis
-    # Key and nonce stored as hex strings — in production these would go to a vault
+    # 5. Store metadata in Redis — no key material here anymore
     metadata = {
         "file_id": file_id,
         "filename": original_filename,
         "original_size": original_size,
-        "key_hex": key.hex(),
-        "nonce_hex": nonce.hex(),
         "shard_ids": shard_ids,
         "daemon_urls": DAEMON_URLS,
     }
@@ -108,34 +135,27 @@ async def download(file_id: str):
         raise HTTPException(status_code=404, detail="File not found")
     metadata = json.loads(raw)
 
-    # 2. Retrieve shards from daemons in order
+    # 2. Fetch key from K8s Secret
+    key, nonce = retrieve_key_from_secret(file_id)
+
+    # 3. Retrieve shards
     shards = []
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient() as client_http:
         for shard_id, daemon_url in zip(metadata["shard_ids"], metadata["daemon_urls"]):
-            response = await client.get(f"{daemon_url}/shard/{shard_id}")
+            response = await client_http.get(f"{daemon_url}/shard/{shard_id}")
             if response.status_code != 200:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to retrieve shard {shard_id} from {daemon_url}"
-                )
+                raise HTTPException(status_code=500, detail=f"Failed to retrieve shard {shard_id}")
             shards.append(response.content)
 
-    # 3. Reassemble ciphertext
+    # 4. Reassemble and decrypt
     ciphertext = reassemble_shards(shards)
-
-    # 4. Decrypt
-    key = bytes.fromhex(metadata["key_hex"])
-    nonce = bytes.fromhex(metadata["nonce_hex"])
     plaintext = decrypt(nonce, ciphertext, key)
 
     return Response(
         content=plaintext,
         media_type="application/octet-stream",
-        headers={
-            "Content-Disposition": f'attachment; filename="{metadata["filename"]}"'
-        }
+        headers={"Content-Disposition": f'attachment; filename="{metadata["filename"]}"'}
     )
-
 @app.get("/files")
 def list_files():
     keys = r.keys("file:*")
