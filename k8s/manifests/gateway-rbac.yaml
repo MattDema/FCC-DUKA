@@ -1,0 +1,37 @@
+# ServiceAccount: identity for the Gateway pod
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gateway-sa
+  namespace: duka
+
+---
+# Role: what the Gateway is allowed to do
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gateway-secret-manager
+  namespace: duka
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "get", "delete"]
+    # create: store key on upload
+    # get: retrieve key on download
+    # delete: optional cleanup
+
+---
+# RoleBinding: link the Role to the ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gateway-secret-manager-binding
+  namespace: duka
+subjects:
+  - kind: ServiceAccount
+    name: gateway-sa
+    namespace: duka
+roleRef:
+  kind: Role
+  name: gateway-secret-manager
+  apiGroup: rbac.authorization.k8s.io
