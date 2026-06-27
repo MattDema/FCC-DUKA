@@ -44,9 +44,9 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+      serviceAccountName: gateway-sa
       containers:
         - name: gateway
-          # TODO: Replace with actual image after Person B pushes to ghcr.io
           image: ghcr.io/mattdema/duka-gateway:latest
           imagePullPolicy: Always
           ports:
