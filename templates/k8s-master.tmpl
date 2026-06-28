@@ -1,0 +1,31 @@
+NAME = "k8s-master"
+CPU = "1"
+VCPU = "1"
+MEMORY = "6144"
+
+OS = [
+  ARCH = "x86_64",
+  BOOT = "disk0"
+]
+
+DISK = [
+  IMAGE_ID = "0",
+  SIZE = "20480",
+  DEV_PREFIX = "vd"
+]
+
+NIC = [
+  NETWORK_ID = "0"
+]
+
+GRAPHICS = [
+  LISTEN = "0.0.0.0",
+  TYPE = "VNC"
+]
+
+CONTEXT = [
+  NETWORK = "YES",
+  SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]",
+  USER_DATA_ENCODING = "base64",
+  USER_DATA = "$USER_DATA_B64"
+]
