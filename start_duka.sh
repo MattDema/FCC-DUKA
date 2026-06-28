@@ -4,6 +4,17 @@ echo "=========================================="
 echo "    DUKA CLUSTER AUTO-HEAL INITIATED      "
 echo "=========================================="
 
+echo "0. Waking up suspended/powered-off VMs..."
+OFF_VMS=$(sudo -u oneadmin onevm list | awk '/k8s-/ && ($5 == "poff" || $5 == "susp") {print $1}')
+if [ -n "$OFF_VMS" ]; then
+    echo " -> Resuming VMs: $(echo $OFF_VMS | tr '\n' ' ')"
+    for off_id in $OFF_VMS; do
+        sudo -u oneadmin onevm resume $off_id >/dev/null 2>&1
+    done
+    echo " -> Waiting 10 seconds for virtual hardware to power on..."
+    sleep 10
+fi
+
 echo "1. Recreating Edge Bridges..."
 sudo ip link add name br-edge-1 type bridge 2>/dev/null
 sudo ip addr add 10.1.1.1/24 dev br-edge-1 2>/dev/null
