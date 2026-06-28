@@ -1,0 +1,90 @@
+╔══════════════════════════════════════════════════════════════╗
+║          🏗️ RECAP INFRASTRUTTURA — 25 GIUGNO               ║
+╚══════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📐 ARCHITETTURA GENERALE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+☁️ Azure (West Europe)
+└── VM opennebula-host (E4ds_v4: 4 vCPU, 32 GB RAM, 128 GB SSD)
+│   OS: Ubuntu 22.04 LTS Gen2
+│   IP pubblico: <IP_AZURE>
+│   User: duka
+│
+├── OpenNebula 6.8 (Installazione pulita MiniONE)
+│   ├── oned (core daemon)
+│   ├── Sunstone UI (:9869)
+│   └── libvirt/KVM (nested virtualization)
+│
+└── 🔲 Rete interna: minione-br (172.16.100.0/24)
+    │
+    ├── 🟢 ip-172-16-100-2 (Master) — 1 vCPU, 6 GB RAM, 20 GB disk
+    ├── 🟢 ip-172-16-100-3 (Worker) — 1 vCPU, 6 GB RAM, 20 GB disk
+    ├── 🟢 ip-172-16-100-4 (Worker) — 1 vCPU, 6 GB RAM, 20 GB disk
+    └── 🟢 ip-172-16-100-5 (Worker) — 1 vCPU, 6 GB RAM, 20 GB disk
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎛️ CLUSTER KUBERNETES (v1.29.15)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────┐
+│  CONTROL PLANE (ip-172-16-100-2)                │
+│                                                 │
+│  ├── kube-apiserver     (:6443)                 │
+│  ├── etcd               (database cluster)      │
+│  ├── kube-scheduler                             │
+│  ├── kube-controller-manager                    │
+│  ├── Flannel CNI        (rete pod 10.244.0.0/16)│
+│  └── kubectl configurato per root               │
+│                                                 │
+└────────────────────┬────────────────────────────┘
+                     │ :6443
+        ┌────────────┼────────────┐
+        ▼            ▼            ▼
+┌──────────────┐┌──────────────┐┌──────────────┐
+│ WORKER NODE  ││ WORKER NODE  ││ WORKER NODE  │
+│ .100.3       ││ .100.4       ││ .100.5       │
+│              ││              ││              │
+│ ├─ kubelet   ││ ├─ kubelet   ││ ├─ kubelet   │
+│ ├─ containerd││ ├─ containerd││ ├─ containerd│
+│ ├─ kube-proxy││ ├─ kube-proxy││ ├─ kube-proxy│
+│ └─ gVisor ⏳ ││ └─ gVisor ⏳ ││ └─ gVisor ⏳ │
+└──────────────┘└──────────────┘└──────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📁 STRUTTURA DEL REPO (fog-project/)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+fog-project/
+├── CHEAT_SHEET.md              # Riferimento per comandi manuali, fix kubeadm e label ruoli
+├── templates/
+│   ├── k8s-master.tmpl         # Template master (Base64 Cloud-Init per OpenNebula)
+│   └── k8s-worker.tmpl         # Template worker (Base64 Cloud-Init per OpenNebula)
+├── context/
+│   ├── master-cloud-init.yaml  # Configurazione master + kubeadm init --ignore-preflight-errors=all
+│   └── worker-cloud-init.yaml  # Preparazione nodi worker
+├── network/
+│   └── vnet.tmpl               # Template della rete OpenNebula virtuale
+└── scripts/
+    ├── prepare-image.sh        # Genera Ubuntu 22.04 compatibile con cloud-init nativo
+    ├── provision.sh            # Script di provisioning automatico (anti-errore Base64)
+    ├── ping-nodes.sh           # Script rapido per testare la connettività di tutte le VM
+    └── setup-gvisor.sh         # Script per l'installazione remota di gVisor sui worker
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ COMPLETATO FINORA                    
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ Re-image VM Azure con nested virt
+✅ OpenNebula reinstallato e funzionante
+✅ Immagine Ubuntu 22.04 configurata per datasource OpenNebula senza conflitti
+✅ Script di provisioning automatizzato
+✅ 4 VM create e attive sulla rete 172.16.x.x
+✅ Control-plane inizializzato con successo (status: Ready)
+✅ 3 Nodi worker uniti con successo al cluster (status: Ready)
+✅ Assegnazione ruoli (worker) completata via label
+
+⏳ PROSSIMI STEP
+⏳ Installare gVisor sui worker (runsc)
+⏳ Installare e configurare Falco
