@@ -45,5 +45,5 @@ runcmd:
   - swapoff -a
   - sed -i '/swap/d' /etc/fstab
 
-  # Il worker è pronto — il join verrà fatto manualmente
+  # Worker node is ready — the join will be executed manually
   - echo "Worker node ready for kubeadm join" > /root/worker-status.txt

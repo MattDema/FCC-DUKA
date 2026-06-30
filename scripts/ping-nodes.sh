@@ -1,10 +1,10 @@
 #!/bin/bash
 # ping-nodes.sh
-# Esegue un ping rapido su tutte le VM OpenNebula attive
-# Eseguire sull'host OpenNebula
+# Performs a quick ping on all active OpenNebula VMs
+# Run on the OpenNebula host
 
 echo "=========================================="
-echo "    VERIFICA CONNETTIVITÀ NODI CLUSTER    "
+echo "     VERIFY CLUSTER NODE CONNECTIVITY    "
 echo "=========================================="
 echo ""
 
@@ -12,17 +12,17 @@ for vm in $(sudo -u oneadmin onevm list --no-header -l ID | tr -d ' '); do
   NAME=$(sudo -u oneadmin onevm show $vm | grep "^NAME" | awk -F= '{print $2}' | tr -d ' "')
   IP=$(sudo -u oneadmin onevm show $vm | grep ETH0_IP= | head -1 | awk -F'"' '{print $2}')
   
-  # Salta se la VM non ha un IP (es. ancora in fase di boot)
+  # Skip if VM has no IP (e.g. still booting)
   if [ -z "$IP" ]; then
-    echo "⏳ $NAME non ha ancora un IP."
+    echo "WAITING $NAME does not have an IP yet."
     continue
   fi
 
-  echo -n "Testando $NAME ($IP) ... "
+  echo -n "Testing $NAME ($IP) ... "
   if ping -c 2 -W 2 $IP > /dev/null 2>&1; then
-    echo "✅ CONNESSO"
+    echo "CONNECTED"
   else
-    echo "❌ NON RAGGIUNGIBILE"
+    echo "UNREACHABLE"
   fi
 done
 echo ""

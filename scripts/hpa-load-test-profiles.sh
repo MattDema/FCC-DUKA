@@ -1,21 +1,21 @@
 #!/bin/bash
 
-# Load test per il Gateway DUKA.
-# Da eseguire sulla VM/master dove hai accesso al Service del Gateway.
+# Load test for the DUKA Gateway.
+# To be executed on the VM/master where you have access to the Gateway Service.
 #
-# Uso:
+# Usage:
 #   chmod +x load-test-profiles.sh
-#   ./load-test-profiles.sh leggero
-#   ./load-test-profiles.sh medio
-#   ./load-test-profiles.sh medio50
-#   ./load-test-profiles.sh aggressivo
+#   ./load-test-profiles.sh light
+#   ./load-test-profiles.sh medium
+#   ./load-test-profiles.sh medium50
+#   ./load-test-profiles.sh aggressive
 #   ./load-test-profiles.sh all
 
-# DA CAMBIARE: inserisci IP e porta esatta del tuo Gateway o Ingress.
+# TO DO: insert exact IP and port of your Gateway or Ingress.
 GATEWAY_IP="10.106.233.31:8080"
 
-# Profilo di default se non passi argomenti.
-PROFILO="${1:-medio}"
+# Default profile if no arguments are passed.
+PROFILO="${1:-medium}"
 
 run_test() {
   DIMENSIONE_MB="$1"
@@ -24,82 +24,82 @@ run_test() {
 
   echo ""
   echo "=================================================="
-  echo "🚀 Inizio Load Test: $NOME_TEST"
-  echo "📦 Payload: ${DIMENSIONE_MB}MB"
-  echo "👥 Richieste simultanee: $RICHIESTE"
-  echo "🌐 Gateway: http://$GATEWAY_IP/upload"
+  echo "Starting Load Test: $NOME_TEST"
+  echo "Payload: ${DIMENSIONE_MB}MB"
+  echo "Concurrent requests: $RICHIESTE"
+  echo "Gateway: http://$GATEWAY_IP/upload"
   echo "=================================================="
 
-  # Crea un file di test finto della dimensione richiesta.
+  # Create a dummy test file of the requested size.
   dd if=/dev/urandom of=testfile.jpg bs=1M count="$DIMENSIONE_MB" 2>/dev/null
 
   START_TIME=$(date +%s)
 
   for i in $(seq 1 "$RICHIESTE"); do
-    echo "Invio richiesta $i/$RICHIESTE..."
+    echo "Sending request $i/$RICHIESTE..."
     curl -s -X POST "http://$GATEWAY_IP/upload" -F file=@testfile.jpg > /dev/null &
   done
 
-  echo "Attendo la fine dei caricamenti (wait)..."
+  echo "Waiting for uploads to finish (wait)..."
   wait
 
   END_TIME=$(date +%s)
   ELAPSED=$((END_TIME - START_TIME))
 
-  echo "✅ Load Test '$NOME_TEST' completato in ${ELAPSED}s!"
+  echo "Load Test '$NOME_TEST' completed in ${ELAPSED}s!"
   echo ""
-  echo "Controlla HPA e pod con:"
+  echo "Check HPA and pods with:"
   echo "kubectl get hpa -n duka"
   echo "kubectl get pods -n duka"
   echo "kubectl top pods -n duka"
 }
 
 case "$PROFILO" in
-  leggero)
-    # 1MB x 10 richieste
-    run_test 1 10 "leggero - 1MB x 10 richieste"
+  light)
+    # 1MB x 10 requests
+    run_test 1 10 "light - 1MB x 10 requests"
     ;;
 
-  medio)
-    # 1MB x 30 richieste
-    run_test 1 30 "medio - 1MB x 30 richieste"
+  medium)
+    # 1MB x 30 requests
+    run_test 1 30 "medium - 1MB x 30 requests"
     ;;
 
-  medio50)
-    # 1MB x 50 richieste
-    run_test 1 50 "medio50 - 1MB x 50 richieste"
+  medium50)
+    # 1MB x 50 requests
+    run_test 1 50 "medium50 - 1MB x 50 requests"
     ;;
 
-  aggressivo)
-    # 10MB x 50 richieste
-    run_test 10 50 "aggressivo - 10MB x 50 richieste"
+  aggressive)
+    # 10MB x 50 requests
+    run_test 10 50 "aggressive - 10MB x 50 requests"
     ;;
 
   all)
-    run_test 1 10 "leggero - 1MB x 10 richieste"
-    echo "Pausa di 20 secondi prima del test medio..."
+    run_test 1 10 "light - 1MB x 10 requests"
+    echo "20 seconds pause before medium test..."
     sleep 20
 
-    run_test 1 30 "medio - 1MB x 30 richieste"
-    echo "Pausa di 20 secondi prima del test medio50..."
+    run_test 1 30 "medium - 1MB x 30 requests"
+    echo "20 seconds pause before medium50 test..."
     sleep 20
 
-    run_test 1 50 "medio50 - 1MB x 50 richieste"
-    echo "Pausa di 20 secondi prima del test aggressivo..."
+    run_test 1 50 "medium50 - 1MB x 50 requests"
+    echo "20 seconds pause before aggressive test..."
     sleep 20
 
-    run_test 10 50 "aggressivo - 10MB x 50 richieste"
+    run_test 10 50 "aggressive - 10MB x 50 requests"
     ;;
 
   *)
-    echo "Profilo non valido: $PROFILO"
+    echo "Invalid profile: $PROFILO"
     echo ""
-    echo "Profili disponibili:"
-    echo "  leggero     -> 1MB x 10 richieste"
-    echo "  medio       -> 1MB x 30 richieste"
-    echo "  medio50     -> 1MB x 50 richieste"
-    echo "  aggressivo  -> 10MB x 50 richieste"
-    echo "  all         -> esegue tutti i test in sequenza"
+    echo "Available profiles:"
+    echo "  light       -> 1MB x 10 requests"
+    echo "  medium      -> 1MB x 30 requests"
+    echo "  medium50    -> 1MB x 50 requests"
+    echo "  aggressive  -> 10MB x 50 requests"
+    echo "  all         -> runs all tests sequentially"
     exit 1
     ;;
 esac
