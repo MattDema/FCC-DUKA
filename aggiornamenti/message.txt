@@ -1,0 +1,153 @@
+Perfect — checksums match, the full pipeline works with K8s Secrets. 
+
+Here is the complete demo script with what to say for each step.
+
+---
+
+## Demo Script
+
+---
+
+### 1. Show the infrastructure (30 seconds)
+
+On the Azure VM:
+
+```bash
+onevm list
+```
+
+**Say:** *"Our infrastructure runs on a single Azure VM hosting OpenNebula 6.8 with KVM. OpenNebula provisions four inner virtual machines — one Kubernetes control plane and three worker nodes simulating geographically distributed fog edge nodes. Each worker runs on its own KVM-virtualized host, isolated from the others."*
+
+---
+
+### 2. Show the K8s cluster (30 seconds)
+
+```bash
+kubectl get nodes
+kubectl get pods -n duka -o wide
+```
+
+**Say:** *"On top of OpenNebula we deployed a Kubernetes cluster. You can see the Gateway, three Storage Daemons, and Redis all running. Notice the NODE column — each Storage Daemon is scheduled on a different worker node thanks to pod anti-affinity rules. This is critical for fault tolerance: no two shards ever share the same physical node."*
+
+---
+
+### 3. Upload a file (1 minute)
+
+```bash
+echo "This is a confidential DUKA document." > testfile.txt
+curl -X POST http://localhost:8080/upload -F "file=@testfile.txt"
+```
+
+**Say:** *"The client sends a file to the Gateway — the only component exposed to the outside world. The Gateway encrypts it with AES-256-GCM, which gives us both confidentiality and integrity authentication in one operation. It then splits the ciphertext into three shards and distributes one shard to each Storage Daemon."*
+
+---
+
+### 4. Show key separation (1 minute)
+
+```bash
+# Show Redis has NO key material
+kubectl exec -it redis-0 -n duka -- redis-cli GET file:<FILE_ID>
+
+# Show the key is in a K8s Secret
+kubectl get secret -n duka | grep duka-key
+kubectl get secret duka-key-<FILE_ID> -n duka -o jsonpath='{.data}' 
+```
+
+**Say:** *"This is the core security improvement we made. Redis stores only the shard map and filename — no cryptographic material. The encryption key and nonce live in a Kubernetes Secret, accessible only to the Gateway's ServiceAccount via RBAC. An attacker who fully compromises Redis gets a shard map pointing to encrypted blobs they cannot decrypt. The key is in a completely separate system with separate access controls."*
+
+---
+
+### 5. Show RBAC (30 seconds)
+
+```bash
+kubectl get role gateway-secret-manager -n duka -o yaml
+kubectl get rolebinding -n duka
+```
+
+**Say:** *"The Gateway runs under a dedicated ServiceAccount called gateway-sa, bound to a Role that allows only create, get, and delete on Secrets — nothing else. The Storage Daemons and Redis have no ServiceAccount permissions at all. This is the principle of least privilege applied at the orchestration layer."*
+
+---
+
+### 6. Download and verify integrity (30 seconds)
+
+```bash
+curl http://localhost:8080/download/<FILE_ID> -o result.txt
+md5sum testfile.txt result.txt
+```
+
+**Say:** *"The Gateway retrieves the three shards from the daemons, fetches the key from the K8s Secret, reassembles the ciphertext, and decrypts it. The MD5 checksums match — the file is identical to the original."*
+
+---
+
+### 7. Show gVisor sandboxing (30 seconds)
+
+```bash
+kubectl get runtimeclass
+kubectl describe pod storage-daemon-0 -n duka | grep Runtime
+```
+
+**Say:** *"Storage Daemon pods run under the gVisor runtime — runsc — instead of standard runc. gVisor is a userspace kernel that intercepts all syscalls before they reach the host Linux kernel. Even if an attacker compromises a Storage Daemon pod, they cannot escape to the host because every syscall is handled inside the sandbox. The pod also runs as non-root with all Linux capabilities dropped."*
+
+---
+
+### 8. Show the gVisor vs Falco trade-off (2 minutes)
+
+```bash
+# Trigger Falco alert in Gateway (runc — Falco sees it)
+kubectl exec deploy/gateway -n duka -- sh -c "echo I am an attacker"
+
+# Trigger same in Storage Daemon (gVisor — Falco misses it)
+kubectl exec storage-daemon-0 -n duka -- sh -c "echo I am an attacker"
+
+# Check Falco logs
+kubectl logs -l app.kubernetes.io/name=falco -n falco -c falco --since=2m | grep -i "DUKA"
+```
+
+**Say:** *"This is our most interesting finding. Falco uses eBPF hooks at the host kernel level to detect anomalous syscalls. When we spawn a shell inside the Gateway pod — which uses standard runc — Falco fires an alert immediately. But when we do the exact same thing inside a Storage Daemon pod running under gVisor, Falco sees nothing. This is not a bug — it is an architectural trade-off. gVisor's isolation guarantee comes precisely from the fact that syscalls never reach the host kernel, which is exactly where Falco's hooks live. We get stronger isolation on the untrusted edge nodes at the cost of host-based observability. For our threat model, that is the right trade-off."*
+
+---
+
+### 9. Show Network Policy limitation (1 minute)
+
+```bash
+kubectl get networkpolicy -n duka
+kubectl exec redis-0 -n duka -- wget -qO- --timeout=5 \
+  http://storage-daemon-1.storage-daemon.duka.svc.cluster.local:8000/health
+```
+
+**Say:** *"We defined NetworkPolicies to enforce Zero-Trust — default deny all, with explicit allow only from Gateway to Storage Daemons. However we discovered that Flannel, our CNI plugin, does not enforce NetworkPolicies natively. The API accepts the objects but there is no controller translating them into packet filtering rules. In production this would require replacing Flannel with Calico or Cilium, which ship their own policy enforcement engines. We chose to document this finding rather than switch CNI at the last minute, because understanding why it fails demonstrates a deeper knowledge of the Kubernetes networking stack than simply showing a working demo."*
+
+---
+
+### 10. Show HPA scaling (2 minutes)
+
+Open two terminals side by side.
+
+Terminal A:
+```bash
+watch -n 1 "kubectl get hpa -n duka; echo '---'; kubectl get pods -n duka"
+```
+
+Terminal B:
+```bash
+./autoscaling-test.sh
+```
+
+**Say:** *"Finally, elasticity. We configured a Horizontal Pod Autoscaler on the Gateway with a 70% CPU threshold, scaling between 1 and 4 replicas. As concurrent uploads spike CPU usage, Kubernetes automatically schedules new Gateway pods. This demonstrates the fog elasticity principle from the course — the system adapts to demand without manual intervention. During testing we also discovered that 10MB payloads caused OOMKilled crashes before HPA could trigger, because AES-256 encryption of multiple concurrent streams exceeded the 256MB memory limit. We solved this by calibrating the test to 1MB payloads at 30 concurrent requests — a more realistic fog-layer workload anyway, since edge nodes typically handle small sensor data and document uploads rather than large media files."*
+
+---
+
+## Likely professor questions and answers
+
+| Question | Answer |
+|---|---|
+| *"Why gVisor over Kata Containers?"* | No nested virtualization dependency — gVisor runs as a userspace process, works on any VM regardless of whether KVM extensions are exposed to the guest. Same syscall-interception threat model for untrusted edge code. |
+| *"Why is the key in K8s Secrets and not HashiCorp Vault?"* | Vault adds significant operational complexity — PKI, dynamic secrets, lease renewal. K8s Secrets with RBAC demonstrates the architectural separation of concerns within our time constraints. In production, Secrets would be encrypted at rest via a KMS provider and Vault would manage key lifecycle. |
+| *"What happens if the Gateway crashes?"* | The ReplicaSet respawns it automatically. Redis metadata survives independently. K8s Secrets survive independently. The new Gateway pod picks up exactly where the old one left off. |
+| *"What happens if a Storage Daemon crashes?"* | The StatefulSet respawns it with the same stable identity and PVC. The shard data on the persistent volume survives the pod restart. |
+| *"How would you scale to 100 edge nodes?"* | Add worker nodes to the K8s cluster — OpenNebula provisions new VMs from the same template, the StatefulSet scales its replica count, and new Storage Daemon pods are scheduled automatically via anti-affinity rules. |
+| *"Why Flannel and not Calico from the start?"* | Flannel was the default CNI in our kubeadm setup. Discovering its NetworkPolicy limitation during testing gave us a deeper understanding of the CNI architecture than if everything had worked out of the box. |
+
+---
+
+Total demo time: approximately 10 minutes, leaving 5 minutes for questions. Good luck tomorrow.

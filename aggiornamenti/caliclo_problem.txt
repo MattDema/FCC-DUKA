@@ -1,0 +1,349 @@
+# 🔧 DUKA Project: Calico CNI Full Troubleshooting Report
+
+This document is a step-by-step postmortem of every networking issue encountered during the Calico CNI migration and how each was resolved. It is intended as a reference for the final project report, oral presentation, and future debugging.
+
+---
+
+## 📌 Context
+
+The DUKA platform runs on a Kubernetes cluster deployed on an **OpenNebula hypervisor** hosted in an Azure VM. The cluster topology is non-standard: worker nodes live on **isolated L3 network segments**, and the OpenNebula host acts as a **router** between them.
+
+```
+OpenNebula Host (Azure VM)
+├── minionebr      → 172.16.100.0/24  → k8s-master  (172.16.100.2)
+├── br-edge-1      → 10.1.1.0/24      → k8s-worker-1 (10.1.1.100)
+├── br-edge-2      → 10.1.2.0/24      → k8s-worker-2 (10.1.2.100)
+└── br-edge-3      → 10.1.3.0/24      → k8s-worker-3 (10.1.3.100)
+```
+
+The cluster was originally set up with **Flannel** as the CNI. The project migrated to **Calico** for NetworkPolicy enforcement. After the migration, three separate networking bugs prevented pod-to-pod communication from working correctly.
+
+---
+
+## 🐛 Bug 1 — Calico Nodes Stuck in `0/1 Running` (BGP Failing)
+
+### Symptom
+
+All four `calico-node` DaemonSet pods were stuck in `0/1 Running` status indefinitely. `kubectl get pods -n kube-system | grep calico-node` always showed `0/1`.
+
+```bash
+calico-node-npwp7   0/1   Running   0   3m49s
+calico-node-d57tx   0/1   Running   0   3m49s
+calico-node-j9vvk   0/1   Running   0   3m48s
+calico-node-pb99s   0/1   Running   0   3m48s
+```
+
+### Investigation
+
+Calico's readiness probe requires BGP sessions to be **Established** with all peers. Checking the BIRD BGP daemon inside a calico-node pod:
+
+```bash
+kubectl exec -n kube-system calico-node-npwp7 -- birdcl show protocols
+# Result:
+Mesh_10_1_1_100 BGP  master  start  Active  Socket: Connection closed
+Mesh_10_1_2_100 BGP  master  start  Active  Socket: Connection closed
+Mesh_10_1_3_100 BGP  master  start  Active  Socket: Connection closed
+```
+
+All BGP sessions were failing. The logs showed:
+
+```
+bird: BGP: Unexpected connect from unknown address 10.1.2.1 (port 50267)
+```
+
+Workers were receiving BGP connections from `10.1.2.1` (the OpenNebula bridge IP) instead of from the control plane IP (`172.16.100.2`). This revealed the real problem:
+
+### Root Cause
+
+The **OpenNebula host's `iptables` POSTROUTING chain** had a MASQUERADE rule applied broadly to all inter-bridge traffic. When the control plane (`172.16.100.2`) opened a BGP TCP connection (port 179) to a worker (`10.1.x.100`), the packet exited through a bridge interface and was **masqueraded** — its source IP was rewritten from `172.16.100.2` to the bridge gateway IP (`10.1.x.1`).
+
+The worker's BIRD daemon received the connection from an **unknown address** (`10.1.x.1`) and rejected it.
+
+### Fix
+
+Insert `RETURN` rules at the **top** of the OpenNebula host's POSTROUTING chain to exempt BGP traffic (TCP port 179) from NAT **before** the MASQUERADE rule fires:
+
+```bash
+# On the OpenNebula host
+sudo iptables -t nat -I POSTROUTING 1 -p tcp --dport 179 -j RETURN
+sudo iptables -t nat -I POSTROUTING 1 -p tcp --sport 179 -j RETURN
+
+# Verify rules are at position 1 and 2
+sudo iptables -t nat -L POSTROUTING -n --line-numbers | head -5
+```
+
+### Verification
+
+Restart the calico-node DaemonSet and check BGP:
+
+```bash
+kubectl rollout restart daemonset/calico-node -n kube-system
+kubectl rollout status daemonset/calico-node -n kube-system
+
+# Check BGP inside a calico-node pod
+kubectl exec -n kube-system calico-node-5zx6w -- birdcl show protocols | grep -E "Mesh|kernel"
+```
+
+Expected output (all sessions **Established**):
+
+```
+kernel1           Kernel  master  up  Established
+Mesh_10_1_1_100   BGP     master  up  Established ✅
+Mesh_10_1_2_100   BGP     master  up  Established ✅
+Mesh_10_1_3_100   BGP     master  up  Established ✅
+```
+
+All four `calico-node` pods reached `1/1 Running`. ✅
+
+---
+
+## 🐛 Bug 2 — Cross-Node Pod Traffic Timing Out (IPIP Encapsulation)
+
+### Symptom
+
+After Calico BGP was fixed, `curl` to the upload endpoint still returned `500 Internal Server Error`. Connectivity testing from the gateway pod showed:
+
+```
+✅ storage-daemon-2   ← same node as gateway (worker-2)
+❌ storage-daemon-0   ← worker-1 — timed out
+❌ storage-daemon-1   ← worker-3 — timed out
+❌ redis-0            ← worker-1 — timed out
+```
+
+Only pods on the **same node** as the gateway were reachable. All cross-node communication timed out.
+
+### Investigation
+
+**Step 1 — Check IPIP mode and routes on worker-2:**
+
+```bash
+ssh ubuntu@10.1.2.100 "ip link show tunl0 && ip route show | grep 10.244"
+```
+
+Output revealed:
+1. `tunl0@NONE: <NOARP,UP,LOWER_UP>` — IPIP tunnel is active
+2. BGP routes via `tunl0` referenced **old Flannel /24 CIDRs** (`10.244.1.0/24`) instead of the real Calico IPAM /26 blocks (`10.244.147.128/26`)
+3. Manually-added static routes for the correct /26 blocks routed via `enp9s0` (plain IP, no encapsulation)
+
+**Step 2 — Check Calico IP pool:**
+
+```bash
+kubectl get ippools.crd.projectcalico.org -o yaml | grep -A5 ipipMode
+# Result:
+ipipMode: Always
+```
+
+### Root Cause
+
+Calico was configured with `ipipMode: Always`. In this mode:
+- Cross-node pod traffic must be **IPIP-encapsulated** (wrapped in an outer IP header)
+- The destination worker **drops** any cross-node pod traffic that arrives without IPIP encapsulation
+
+The manually-added static routes sent traffic via plain IP (not via `tunl0`). When packets arrived at the destination worker unencapsulated, Calico's iptables rules dropped them silently.
+
+Same-node traffic worked because it travels directly via `cali*` virtual interfaces and never needs IPIP encapsulation.
+
+### Fix
+
+Switch Calico's IP pool to `ipipMode: Never`. This topology uses L3 routing via the OpenNebula host — IPIP encapsulation is not needed. The manually-added routes handle cross-node routing correctly via plain IP.
+
+```bash
+kubectl patch ippool default-ipv4-ippool \
+  --type=merge \
+  -p '{"spec":{"ipipMode":"Never"}}'
+
+# Restart calico-node to flush old IPIP iptables rules
+kubectl rollout restart daemonset/calico-node -n kube-system
+kubectl rollout status daemonset/calico-node -n kube-system
+```
+
+**Verify IPIP tunnel routes are gone:**
+
+```bash
+ssh ubuntu@10.1.2.100 "ip route show | grep tunl"
+# Expected: empty output
+```
+
+---
+
+## 🐛 Bug 3 — Flannel Ghost MASQUERADE Rewrites Source IP (Root Cause of 500 Error)
+
+### Symptom
+
+Even after fixing IPIP mode, cross-node pod connections still timed out. The `debug-gateway-allow-all` NetworkPolicy (allowing ALL egress from gateway) made no difference.
+
+### Investigation
+
+**Step 1 — tcpdump on both sides simultaneously:**
+
+```bash
+# Terminal 1: Watch gateway's cali interface (packet leaving the pod)
+ssh ubuntu@10.1.2.100 "sudo tcpdump -i cali9c36d143ca5 dst 10.244.147.130 -n -c 10"
+
+# Terminal 2: Watch worker-2's enp9s0 (packet leaving the node)  
+ssh ubuntu@10.1.2.100 "sudo tcpdump -i enp9s0 dst 10.244.147.130 -n -c 10"
+```
+
+**The smoking gun:**
+
+```
+# On cali interface (pod egress):
+IP 10.244.223.195.57064 > 10.244.147.130.8000: Flags [S]   ← correct source IP
+
+# On enp9s0 (node egress):
+IP 10.1.2.100.62401    > 10.244.147.130.8000: Flags [S]   ← SOURCE IP CHANGED!
+```
+
+The source IP was being **rewritten** from the pod IP (`10.244.223.195`) to the worker node IP (`10.1.2.100`) somewhere between the `cali` interface and `enp9s0`.
+
+**Step 2 — Inspect POSTROUTING chain on worker-2:**
+
+```bash
+ssh ubuntu@10.1.2.100 "sudo iptables -t nat -L FLANNEL-POSTRTG -n -v"
+```
+
+Output:
+
+```
+RETURN      10.244.2.0/24    10.244.0.0/16   ← Old Flannel CIDR: pod-to-pod RETURN (no masq)
+RETURN      10.244.0.0/16    10.244.2.0/24   ← Old Flannel CIDR: return path
+RETURN     !10.244.0.0/16    10.244.2.0/24
+MASQUERADE  10.244.0.0/16   !224.0.0.0/4    ← ⚠️ MASQUERADE any pod traffic not matched above!
+```
+
+### Root Cause
+
+**Flannel was removed but its `iptables` rules were never cleaned up.** The `FLANNEL-POSTRTG` chain remained active on all nodes.
+
+Flannel's MASQUERADE RETURN rules were written for the **old `/24` pod CIDRs** (e.g., `10.244.2.0/24` for worker-2). After the Calico migration, pods received IPs from **Calico IPAM `/26` blocks** (e.g., `10.244.223.192/26`).
+
+The RETURN exemption did NOT match the new Calico IPs:
+- Gateway pod IP: `10.244.223.195` → **NOT in `10.244.2.0/24`** → RETURN rule doesn't apply
+- Falls through to the catch-all `MASQUERADE` rule
+- Source IP rewritten: `10.244.223.195` → `10.1.2.100`
+
+At the destination (worker-1), Calico's NetworkPolicy checks whether the source IP belongs to an `app=gateway` pod. The rewritten IP `10.1.2.100` is a **node IP**, not a gateway pod → **Calico drops the packet**.
+
+This is why same-node traffic worked: same-node pod-to-pod traffic is exempt from POSTROUTING masquerade (the packets never exit via `enp9s0`).
+
+### Fix
+
+Remove all Flannel ghost rules from **every node** in the cluster:
+
+```bash
+# Run from OpenNebula host — cleans all 4 nodes at once
+for ip in 172.16.100.2 10.1.1.100 10.1.2.100 10.1.3.100; do
+  echo "=== Cleaning Flannel ghost rules on $ip ==="
+  ssh ubuntu@$ip "
+    # Remove ghost POSTROUTING rule
+    sudo iptables -t nat -D POSTROUTING \
+      -m comment --comment 'flanneld masq' -j FLANNEL-POSTRTG 2>/dev/null
+    sudo iptables -t nat -F FLANNEL-POSTRTG 2>/dev/null
+    sudo iptables -t nat -X FLANNEL-POSTRTG 2>/dev/null
+
+    # Remove ghost FORWARD rule
+    sudo iptables -D FORWARD \
+      -m comment --comment 'flanneld forward' -j FLANNEL-FWD 2>/dev/null
+    sudo iptables -F FLANNEL-FWD 2>/dev/null
+    sudo iptables -X FLANNEL-FWD 2>/dev/null
+    echo Done
+  "
+done
+```
+
+### Verification
+
+Test cross-node connectivity from the gateway pod:
+
+```bash
+kubectl exec -n duka deployment/gateway -- python3 -c "
+import socket
+for host, port in [
+  ('storage-daemon-0.storage-daemon.duka.svc.cluster.local', 8000),
+  ('storage-daemon-1.storage-daemon.duka.svc.cluster.local', 8000),
+  ('storage-daemon-2.storage-daemon.duka.svc.cluster.local', 8000),
+  ('redis-0.redis.duka.svc.cluster.local', 6379),
+]:
+    s = socket.socket(); s.settimeout(6)
+    try: s.connect((host, port)); print(f'✅ {host}')
+    except Exception as e: print(f'❌ {host}: {e}')
+    finally: s.close()
+"
+```
+
+Expected:
+```
+✅ storage-daemon-0  (worker-1)
+✅ storage-daemon-1  (worker-3)
+✅ storage-daemon-2  (worker-2)
+✅ redis-0           (worker-1)
+```
+
+Full upload test:
+```bash
+curl -X POST http://localhost:30080/upload -F "file=@/etc/hostname"
+# Expected: 200 OK with file_id in response
+```
+
+---
+
+## 🗺️ Full Bug Timeline Summary
+
+| # | Bug | Symptom | Root Cause | Fix |
+|---|-----|---------|-----------|-----|
+| 1 | BGP sessions failing | `calico-node` stuck `0/1` | OpenNebula host NAT masquerading BGP port 179 | `iptables -t nat -I POSTROUTING 1 -p tcp --dport 179 -j RETURN` on OpenNebula host |
+| 2 | Cross-node pods timeout | All daemons on other workers unreachable | `ipipMode: Always` requiring IPIP, but static routes bypassing IPIP | `kubectl patch ippool` → `ipipMode: Never` |
+| 3 | Source IP rewritten | 500 error, Calico drops packets at destination | Flannel ghost `MASQUERADE` rule rewriting pod IP to node IP | Delete `FLANNEL-POSTRTG` and `FLANNEL-FWD` chains on all nodes |
+
+---
+
+## 🏗️ Lessons Learned
+
+### 1. Always fully remove old CNI before installing a new one
+Removing Flannel via `kubectl delete` only removes the K8s resources. The **iptables chains remain on every node** and must be cleaned manually with `iptables -F`/`-X`. These ghost rules can silently corrupt traffic in non-obvious ways.
+
+### 2. Non-standard L3 topologies require careful CNI configuration
+Calico defaults (`ipipMode: Always`) assume nodes can communicate directly at L2. In this routed OpenNebula topology, IPIP mode must be `Never` — plain IP routing via the OpenNebula host is sufficient.
+
+### 3. Use `tcpdump` on both sides of a link to detect SNAT
+Comparing the source IP seen on the `cali` interface vs. `enp9s0` immediately revealed the masquerade. This technique (observing source IP before and after POSTROUTING) should be the **first diagnostic step** for any cross-node timeout.
+
+### 4. BGP requires NAT exemption on the router
+In any topology where a router sits between K8s nodes (OpenNebula, VPN, corporate router), **BGP traffic (TCP port 179) must be exempted from MASQUERADE** on that router. Otherwise peering sessions connect from an unexpected IP and are rejected.
+
+### 5. Same-node working / cross-node failing = POSTROUTING SNAT or routing issue
+This pattern uniquely identifies a **POSTROUTING masquerade problem**. Same-node traffic never exits through a physical interface, so POSTROUTING masquerade never fires.
+
+---
+
+## 📋 Quick Reference: Key Diagnostic Commands
+
+```bash
+# Check BGP session status (run inside calico-node pod)
+kubectl exec -n kube-system <calico-pod> -- birdcl show protocols | grep -E "Mesh|kernel"
+
+# Detect SNAT: compare source IPs on cali vs enp9s0
+sudo tcpdump -i <cali-interface> dst <remote-pod-ip> -n   # shows pod IP
+sudo tcpdump -i enp9s0 dst <remote-pod-ip> -n             # shows node IP if masqueraded
+
+# Check if Flannel ghost rules are present
+sudo iptables -t nat -L FLANNEL-POSTRTG -n -v
+sudo iptables -L FLANNEL-FWD -n -v
+
+# Check Calico IPIP mode
+kubectl get ippools.crd.projectcalico.org -o yaml | grep ipipMode
+
+# Check OpenNebula host POSTROUTING (for BGP exemption)
+sudo iptables -t nat -L POSTROUTING -n --line-numbers | head -10
+
+# Full cross-node connectivity test from gateway pod
+kubectl exec -n duka deployment/gateway -- python3 -c "
+import socket
+for h,p in [('storage-daemon-0.storage-daemon.duka.svc.cluster.local',8000),
+            ('redis-0.redis.duka.svc.cluster.local',6379)]:
+    s=socket.socket(); s.settimeout(5)
+    try: s.connect((h,p)); print(f'✅ {h}')
+    except Exception as e: print(f'❌ {h}: {e}')
+    finally: s.close()
+"
+```

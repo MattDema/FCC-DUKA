@@ -23,7 +23,7 @@ info()    { echo -e "${CYAN}[INFO]${RESET}  $*"; }
 ok()      { echo -e "${GREEN}[ OK ]${RESET}  $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
 section() { echo -e "\n${BOLD}══════════════════════════════════════════${RESET}"; \
-            echo -e "${BOLD}  $*${RESET}"; \
+            echo -e "${BOLD}                 $*${RESET}"; \
             echo -e "${BOLD}══════════════════════════════════════════${RESET}"; }
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -299,7 +299,7 @@ ssh_node "$MASTER_IP" "
 
 echo ""
 echo -e "${GREEN}${BOLD}══════════════════════════════════════════${RESET}"
-echo -e "${GREEN}${BOLD}  DUKA cluster is operational! 🚀          ${RESET}"
+echo -e "${GREEN}${BOLD}         DUKA cluster is operational!     ${RESET}"
 echo -e "${GREEN}${BOLD}══════════════════════════════════════════${RESET}"
 echo ""
 echo -e "  Upload test:  ${CYAN}curl -X POST http://$MASTER_IP:30080/upload -F 'file=@/etc/hostname'${RESET}"
