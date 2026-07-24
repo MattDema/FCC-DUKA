@@ -22,7 +22,7 @@ WORKER2_POD_CIDR="10.244.223.192/26"   # ip-172-16-100-4
 WORKER3_POD_CIDR="10.244.97.192/26"    # ip-172-16-100-5
 # OpenNebula host DNS server (dnsmasq on minionebr)
 DNS_SERVER="172.16.100.1"
-SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes"
+SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o BatchMode=yes"
 ssh_node()  { sudo -u oneadmin ssh $SSH_OPTS ubuntu@"$1" "${@:2}"; }
 ssh_admin() { sudo -u oneadmin ssh $SSH_OPTS ubuntu@"$1" "${@:2}"; }
 # =============================================================================

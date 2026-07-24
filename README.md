@@ -1,17 +1,37 @@
+<a id="top"></a>
+
 # D.U.K.A. - Distributed Untrusted-node Key-separated Architecture
 
-**Group Members:**
-- Matthew De Marco (267323)
-- Andrea Lo Iacono (267324)
-- Jago Revrenna (267325)
+<p align="center">
+  <img src="https://img.shields.io/badge/version-1.0.0-2563EB?style=flat-square" alt="Version 1.0.0" />
+  <img src="https://img.shields.io/badge/course-Fog%20and%20Cloud%20Computing-0F766E?style=flat-square" alt="Fog and Cloud Computing course" />
+  <img src="https://img.shields.io/badge/platform-OpenNebula%20%7C%20Kubernetes-326CE5?style=flat-square" alt="OpenNebula and Kubernetes" />
+  <img src="https://img.shields.io/badge/security-AES--256--GCM%20%7C%20Calico%20%7C%20gVisor-7C3AED?style=flat-square" alt="Security stack" />
+</p>
 
-**Course:** Fog and Cloud Computing 2025/26 - UniTn
+> A distributed object-storage prototype for partially trusted fog nodes. DUKA encrypts and shards objects across edge workers while separating metadata, cryptographic keys, network policy, and runtime isolation responsibilities.
+
+**Course:** Fog and Cloud Computing 2025/26 - University of Trento
+
+## Table of contents
+
+- [Motivation and scope](#1-motivation-and-scope)
+- [Architecture](#2-revised-architecture)
+- [Security design](#3-security-design)
+- [Elasticity and failure handling](#4-elasticity--failure-handling)
+- [Repository layout](#repository-layout)
+- [Deploying the application](#deploying-the-application)
+- [Core demos](#core-demos)
+- [Security policy](#security-policy)
+- [Team](#team)
 
 ## 1. Motivation and Scope
 
 Fog computing is useful when data has to be processed or stored close to where it is produced, but it leaves behind the safety net of a centralized cloud. Edge nodes may be smaller, administered by different parties, connected through non-uniform networks, and more exposed to faults or compromise. For this reason, our project treats storage nodes as useful but not fully trusted infrastructure, following the same general direction as zero-trust system design: trust is not assumed only because a component is inside the perimeter.
 
 The goal of DUKA is to provide a shared object storage service where clients interact with a single gateway, while the actual storage work is distributed across several edge workers. Files are encrypted before being split into fragments. The fragments are placed on storage daemons running on different Kubernetes workers, while metadata and key material are kept outside the storage daemons. This gives us a compact system where we can demonstrate orchestration, elasticity, network isolation, runtime hardening, and observability.
+
+<p align="right"><a href="#top">Back to top</a></p>
 
 ## 2. Revised Architecture
 
@@ -65,6 +85,8 @@ Encryption keys are represented as Kubernetes Secrets to enforce separation of r
 Storage daemons run with **gVisor** through a Kubernetes RuntimeClass, adding a userspace kernel boundary between the daemon and the host kernel.
 **Falco** is used as the runtime security monitor to turn security into something observable, allowing us to trigger a controlled suspicious action and show a corresponding alert.
 
+<p align="right"><a href="#top">Back to top</a></p>
+
 ## 4. Elasticity & Failure Handling
 
 ### 4.1 Horizontal Pod Autoscaling
@@ -74,6 +96,8 @@ Load tests are split into profiles (e.g., 1 MB x 30 requests vs 10 MB x 50 reque
 
 ### 4.2 Gateway Resilience
 Deleting a Gateway pod while background traffic is running demonstrates recovery vs high availability. With multiple Gateway replicas, traffic can continue through the remaining pods without client-visible failures.
+
+<p align="right"><a href="#top">Back to top</a></p>
 
 ---
 
@@ -96,12 +120,17 @@ Deleting a Gateway pod while background traffic is running demonstrates recovery
 +-- network/                      # OpenNebula base network template
 +-- scripts/                      # provisioning, gVisor, load and resilience tests
 +-- templates/                    # OpenNebula VM templates
-+-- start_duka.sh                 # script to deploy the application (not fully working)
++-- start_duka.sh                 # environment-specific OpenNebula/Kubernetes bootstrap script
 ```
+
+<p align="right"><a href="#top">Back to top</a></p>
 
 ## Deploying the Application
 
 From the Kubernetes master, apply the manifests:
+
+> [!IMPORTANT]
+> Run DUKA only in an isolated, disposable environment. Do not commit OpenNebula host keys, Kubernetes `admin.conf`, join commands, cloud credentials, or real customer data. See [SECURITY.md](./SECURITY.md) before deployment.
 
 ```bash
 kubectl apply -f k8s/manifests/namespace.yaml
@@ -117,6 +146,8 @@ kubectl apply -f k8s/manifests/network-policy-default-deny.yaml
 kubectl apply -f k8s/manifests/network-policy-allow-gateway.yaml
 kubectl apply -f k8s/manifests/network-policy-allow-storage-redis.yaml
 ```
+
+<p align="right"><a href="#top">Back to top</a></p>
 
 ## Core Demos
 
@@ -229,4 +260,25 @@ kubectl exec storage-daemon-0 -n duka -- sh -c "echo 'I am an attacker spawning 
 ```
 
 **Expected Result:** You will see an alert triggered for the Gateway in Terminal B, but nothing for the Storage Daemon. This demonstrates a fundamental architectural trade-off: gVisor intercepts and handles system calls in userspace before they ever reach the host kernel. Because Falco lives on the host kernel, it is effectively blind to internal system calls happening inside the gVisor sandbox.
+
+> [!WARNING]
+> The Falco demonstration deliberately simulates suspicious activity. Run it only in an isolated test cluster that you control.
+
+<p align="right"><a href="#top">Back to top</a></p>
+
+## Security policy
+
+The current branch removes long-lived cluster-bootstrap behaviour, restricts the locally generated join command to its administrator, avoids accepting changed SSH host keys silently, and ignores local credentials and generated deployment files. Read [SECURITY.md](./SECURITY.md) for the operational checklist and production limitations.
+
+<p align="right"><a href="#top">Back to top</a></p>
+
+## Team
+
+| Member | GitHub | LinkedIn | Email |
+| --- | --- | --- | --- |
+| Andrea Lo Iacono | [ADreLOI](https://github.com/ADreLOI) | [andreloi](https://www.linkedin.com/in/adreloi) | [andrea.loiacono@studenti.unitn.it](mailto:andrea.loiacono@studenti.unitn.it) |
+| Matthew De Marco | [MattDema](https://github.com/MattDema) | Profile link pending confirmation | [matthew.demarco@studenti.unitn.it](mailto:matthew.demarco@studenti.unitn.it) |
+| Jago Revrenna | [jagorev](https://github.com/jagorev) | [jagorevrenna](https://www.linkedin.com/in/jagorevrenna) | [jago.revrenna@studenti.unitn.it](mailto:jago.revrenna@studenti.unitn.it) |
+
+<p align="right"><a href="#top">Back to top</a></p>
 

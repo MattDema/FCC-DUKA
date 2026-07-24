@@ -1,5 +1,16 @@
-# Private keys - never commit
+# Private keys and local credentials - never commit
 *.pem
 *.key
+*.p12
+*.pfx
+*.crt
+.env
+.env.*
+!.env.example
+*.kubeconfig
+kubeconfig
+*.tfvars
+secrets*.yaml
+secrets*.yml
 github-token.txt
 pipeline_progetto_matt.md

@@ -67,7 +67,9 @@ runcmd:
   # ============================================
   # 6. INITIALIZE CLUSTER
   # ============================================
-  - kubeadm init --pod-network-cidr=10.244.0.0/16 --token-ttl=0 --ignore-preflight-errors=all | tee /root/kubeadm-init.log
+  # Bootstrap tokens use kubeadm's default 24-hour TTL. A production deployment
+  # should generate a new token only when a worker is intentionally joined.
+  - kubeadm init --pod-network-cidr=10.244.0.0/16 --ignore-preflight-errors=all | tee /root/kubeadm-init.log
 
   # Configure kubectl for root user
   - mkdir -p /root/.kube
@@ -87,4 +89,4 @@ runcmd:
   # 8. SAVE JOIN COMMAND
   # ============================================
   - kubeadm token create --print-join-command > /root/join-command.txt
-  - chmod 644 /root/join-command.txt
+  - chmod 600 /root/join-command.txt
