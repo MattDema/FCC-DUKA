@@ -14,3 +14,6 @@ secrets*.yaml
 secrets*.yml
 github-token.txt
 pipeline_progetto_matt.md
+
+# Sensitive local project notes and deployment updates
+/aggiornamenti/

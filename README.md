@@ -35,6 +35,7 @@
 - [Security policy](#security-policy)
 - [Acknowledgments](#acknowledgments)
 - [Team](#team)
+- [License](#license)
 
 </details>
 
@@ -273,7 +274,7 @@ The current branch removes long-lived cluster-bootstrap behaviour, restricts the
 
 ## Acknowledgments
 
-DUKA was developed for the **Fog and Cloud Computing** course at the University of Trento under the guidance of [**Prof. Domenico Siracusa**](https://iris.unitn.it/cris/rp/rp28498). We thank him for the course foundations, architectural guidance, and feedback that supported the development and evaluation of the project.
+DUKA was developed for the **Fog and Cloud Computing** course at the University of Trento under the guidance of [**Prof. Domenico Siracusa**](https://iris.unitn.it/cris/rp/rp28498), with support from [**Dr. Matteo Franzil**](https://matteo.franzil.com/) as teaching assistant. We thank them for the course foundations, architectural guidance, hands-on support, and feedback that helped us develop and evaluate the project.
 
 OpenNebula, Kubernetes, Calico, gVisor, Falco, Redis, and the other named platforms are technologies used by the prototype; no formal collaboration with their maintainers or vendors is claimed.
 
@@ -286,6 +287,10 @@ No infrastructure credentials, internal endpoints, host keys, join tokens, priva
 | Andrea Lo Iacono | [ADreLOI](https://github.com/ADreLOI) | [Andrea Lo Iacono](https://www.linkedin.com/in/adreloi) | [andrea.loiacono@studenti.unitn.it](mailto:andrea.loiacono@studenti.unitn.it) |
 | Matthew De Marco | [MattDema](https://github.com/MattDema) | [Matthew De Marco](https://www.linkedin.com/in/matt-de-marco/) | [matthew.demarco@studenti.unitn.it](mailto:matthew.demarco@studenti.unitn.it) |
 | Jago Revrenna | [jagorev](https://github.com/jagorev) | [Jago Revrenna](https://www.linkedin.com/in/jagorevrenna) | [jago.revrenna@studenti.unitn.it](mailto:jago.revrenna@studenti.unitn.it) |
+
+## License
+
+Distributed under the **MIT License**. See [`LICENSE`](./LICENSE) for the complete terms.
 
 <p align="center">
   <a href="#top" style="text-decoration: none;">
