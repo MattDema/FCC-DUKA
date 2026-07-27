@@ -283,9 +283,9 @@ No infrastructure credentials, internal endpoints, host keys, join tokens, priva
 
 | Member | GitHub | LinkedIn | Email |
 | --- | --- | --- | --- |
-| Andrea Lo Iacono | [ADreLOI](https://github.com/ADreLOI) | [andreloi](https://www.linkedin.com/in/adreloi) | [andrea.loiacono@studenti.unitn.it](mailto:andrea.loiacono@studenti.unitn.it) |
+| Andrea Lo Iacono | [ADreLOI](https://github.com/ADreLOI) | [Andrea Lo Iacono](https://www.linkedin.com/in/adreloi) | [andrea.loiacono@studenti.unitn.it](mailto:andrea.loiacono@studenti.unitn.it) |
 | Matthew De Marco | [MattDema](https://github.com/MattDema) | [Matthew De Marco](https://www.linkedin.com/in/matt-de-marco/) | [matthew.demarco@studenti.unitn.it](mailto:matthew.demarco@studenti.unitn.it) |
-| Jago Revrenna | [jagorev](https://github.com/jagorev) | [jagorevrenna](https://www.linkedin.com/in/jagorevrenna) | [jago.revrenna@studenti.unitn.it](mailto:jago.revrenna@studenti.unitn.it) |
+| Jago Revrenna | [jagorev](https://github.com/jagorev) | [Jago Revrenna](https://www.linkedin.com/in/jagorevrenna) | [jago.revrenna@studenti.unitn.it](mailto:jago.revrenna@studenti.unitn.it) |
 
 <p align="center">
   <a href="#top" style="text-decoration: none;">
