@@ -3,17 +3,27 @@
 # D.U.K.A. - Distributed Untrusted-node Key-separated Architecture
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-2563EB?style=flat-square" alt="Version 1.0.0" />
-  <img src="https://img.shields.io/badge/course-Fog%20and%20Cloud%20Computing-0F766E?style=flat-square" alt="Fog and Cloud Computing course" />
-  <img src="https://img.shields.io/badge/platform-OpenNebula%20%7C%20Kubernetes-326CE5?style=flat-square" alt="OpenNebula and Kubernetes" />
-  <img src="https://img.shields.io/badge/security-AES--256--GCM%20%7C%20Calico%20%7C%20gVisor-7C3AED?style=flat-square" alt="Security stack" />
+  <img src="https://img.shields.io/badge/version-1.0.0-2563EB?style=for-the-badge" alt="Version 1.0.0" />
+  <a href="https://github.com/MattDema/FCC-DUKA/stargazers"><img src="https://img.shields.io/github/stars/MattDema/FCC-DUKA?style=for-the-badge&logo=github&label=Stars" alt="GitHub stars" /></a>
+  <a href="https://github.com/MattDema/FCC-DUKA/graphs/contributors"><img src="https://img.shields.io/github/contributors/MattDema/FCC-DUKA?style=for-the-badge" alt="Contributors" /></a>
+  <a href="https://github.com/MattDema/FCC-DUKA/forks"><img src="https://img.shields.io/github/forks/MattDema/FCC-DUKA?style=for-the-badge" alt="Forks" /></a>
+  <a href="https://github.com/MattDema/FCC-DUKA/issues"><img src="https://img.shields.io/github/issues/MattDema/FCC-DUKA?style=for-the-badge" alt="Open issues" /></a>
+  <img src="https://img.shields.io/github/repo-size/MattDema/FCC-DUKA?style=for-the-badge" alt="Repository size" />
+  <img src="https://img.shields.io/github/last-commit/MattDema/FCC-DUKA?style=for-the-badge" alt="Last commit" />
+  <img src="https://img.shields.io/github/license/MattDema/FCC-DUKA?style=for-the-badge" alt="License status" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/course-Fog%20and%20Cloud%20Computing-0F766E?style=for-the-badge" alt="Fog and Cloud Computing" />
+  <img src="https://img.shields.io/badge/security-Zero%20Trust%20%7C%20AES--256--GCM-7C3AED?style=for-the-badge" alt="Zero Trust and AES-256-GCM" />
 </p>
 
 > A distributed object-storage prototype for partially trusted fog nodes. DUKA encrypts and shards objects across edge workers while separating metadata, cryptographic keys, network policy, and runtime isolation responsibilities.
 
 **Course:** Fog and Cloud Computing 2025/26 - University of Trento
 
-## Table of contents
+<details>
+<summary><h2>Table of Contents 📖</h2></summary>
 
 - [Motivation and scope](#1-motivation-and-scope)
 - [Architecture](#2-revised-architecture)
@@ -23,15 +33,16 @@
 - [Deploying the application](#deploying-the-application)
 - [Core demos](#core-demos)
 - [Security policy](#security-policy)
+- [Acknowledgments](#acknowledgments)
 - [Team](#team)
+
+</details>
 
 ## 1. Motivation and Scope
 
 Fog computing is useful when data has to be processed or stored close to where it is produced, but it leaves behind the safety net of a centralized cloud. Edge nodes may be smaller, administered by different parties, connected through non-uniform networks, and more exposed to faults or compromise. For this reason, our project treats storage nodes as useful but not fully trusted infrastructure, following the same general direction as zero-trust system design: trust is not assumed only because a component is inside the perimeter.
 
 The goal of DUKA is to provide a shared object storage service where clients interact with a single gateway, while the actual storage work is distributed across several edge workers. Files are encrypted before being split into fragments. The fragments are placed on storage daemons running on different Kubernetes workers, while metadata and key material are kept outside the storage daemons. This gives us a compact system where we can demonstrate orchestration, elasticity, network isolation, runtime hardening, and observability.
-
-<p align="right"><a href="#top">Back to top</a></p>
 
 ## 2. Revised Architecture
 
@@ -85,8 +96,6 @@ Encryption keys are represented as Kubernetes Secrets to enforce separation of r
 Storage daemons run with **gVisor** through a Kubernetes RuntimeClass, adding a userspace kernel boundary between the daemon and the host kernel.
 **Falco** is used as the runtime security monitor to turn security into something observable, allowing us to trigger a controlled suspicious action and show a corresponding alert.
 
-<p align="right"><a href="#top">Back to top</a></p>
-
 ## 4. Elasticity & Failure Handling
 
 ### 4.1 Horizontal Pod Autoscaling
@@ -96,8 +105,6 @@ Load tests are split into profiles (e.g., 1 MB x 30 requests vs 10 MB x 50 reque
 
 ### 4.2 Gateway Resilience
 Deleting a Gateway pod while background traffic is running demonstrates recovery vs high availability. With multiple Gateway replicas, traffic can continue through the remaining pods without client-visible failures.
-
-<p align="right"><a href="#top">Back to top</a></p>
 
 ---
 
@@ -123,8 +130,6 @@ Deleting a Gateway pod while background traffic is running demonstrates recovery
 +-- start_duka.sh                 # environment-specific OpenNebula/Kubernetes bootstrap script
 ```
 
-<p align="right"><a href="#top">Back to top</a></p>
-
 ## Deploying the Application
 
 From the Kubernetes master, apply the manifests:
@@ -146,8 +151,6 @@ kubectl apply -f k8s/manifests/network-policy-default-deny.yaml
 kubectl apply -f k8s/manifests/network-policy-allow-gateway.yaml
 kubectl apply -f k8s/manifests/network-policy-allow-storage-redis.yaml
 ```
-
-<p align="right"><a href="#top">Back to top</a></p>
 
 ## Core Demos
 
@@ -264,13 +267,17 @@ kubectl exec storage-daemon-0 -n duka -- sh -c "echo 'I am an attacker spawning 
 > [!WARNING]
 > The Falco demonstration deliberately simulates suspicious activity. Run it only in an isolated test cluster that you control.
 
-<p align="right"><a href="#top">Back to top</a></p>
-
 ## Security policy
 
 The current branch removes long-lived cluster-bootstrap behaviour, restricts the locally generated join command to its administrator, avoids accepting changed SSH host keys silently, and ignores local credentials and generated deployment files. Read [SECURITY.md](./SECURITY.md) for the operational checklist and production limitations.
 
-<p align="right"><a href="#top">Back to top</a></p>
+## Acknowledgments
+
+DUKA was developed for the **Fog and Cloud Computing** course at the University of Trento under the guidance of [**Prof. Domenico Siracusa**](https://iris.unitn.it/cris/rp/rp28498). We thank him for the course foundations, architectural guidance, and feedback that supported the development and evaluation of the project.
+
+OpenNebula, Kubernetes, Calico, gVisor, Falco, Redis, and the other named platforms are technologies used by the prototype; no formal collaboration with their maintainers or vendors is claimed.
+
+No infrastructure credentials, internal endpoints, host keys, join tokens, private configuration, or real deployment data are included in this repository documentation.
 
 ## Team
 
@@ -280,5 +287,11 @@ The current branch removes long-lived cluster-bootstrap behaviour, restricts the
 | Matthew De Marco | [MattDema](https://github.com/MattDema) | Profile link pending confirmation | [matthew.demarco@studenti.unitn.it](mailto:matthew.demarco@studenti.unitn.it) |
 | Jago Revrenna | [jagorev](https://github.com/jagorev) | [jagorevrenna](https://www.linkedin.com/in/jagorevrenna) | [jago.revrenna@studenti.unitn.it](mailto:jago.revrenna@studenti.unitn.it) |
 
-<p align="right"><a href="#top">Back to top</a></p>
+<p align="center">
+  <a href="#top" style="text-decoration: none;">
+    <img src="https://img.icons8.com/ios-filled/50/000000/up.png" alt="Back to Top" width="40" height="40"/>
+    <br>
+    <strong>Back to Top</strong>
+  </a>
+</p>
 
